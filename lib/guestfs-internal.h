@@ -272,6 +272,7 @@ struct drive {
   enum discard discard;
   bool copyonread;
   int blocksize;
+  char *secobject;
 };
 
 /* Extra hv parameters (from guestfs_config). */

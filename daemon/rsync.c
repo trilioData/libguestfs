@@ -39,7 +39,8 @@ optgroup_rsync_available (void)
 static int
 rsync (const char *src, const char *src_orig,
        const char *dest, const char *dest_orig,
-       int archive, int deletedest)
+       int archive, int deletedest, int nowholefile,
+       int sparse, int hardlinks, const char *exclude_from)
 {
   const char *argv[MAX_ARGS];
   size_t i = 0;
@@ -53,6 +54,23 @@ rsync (const char *src, const char *src_orig,
 
   if (deletedest)
     ADD_ARG (argv, i, "--delete");
+
+  if (nowholefile) {
+    ADD_ARG (argv, i, "--no-whole-file");
+    ADD_ARG (argv, i, "--inplace");
+  }
+  ADD_ARG (argv, i, "--no-specials");
+
+  if (sparse)
+    ADD_ARG (argv, i, "--sparse");
+  
+  if (hardlinks)
+    ADD_ARG (argv, i, "--hard-links");
+
+    if (exclude_from) {
+    ADD_ARG (argv, i, "--exclude-from");
+    ADD_ARG (argv, i, exclude_from);
+  }
 
   ADD_ARG (argv, i, src);
   ADD_ARG (argv, i, dest);
@@ -70,7 +88,8 @@ rsync (const char *src, const char *src_orig,
 /* Takes optional arguments, consult optargs_bitmask. */
 int
 do_rsync (const char *src_orig, const char *dest_orig,
-          int archive, int deletedest)
+          int archive, int deletedest, int nowholefile,
+          int sparse, int hardlinks, const char *exclude_from)
 {
   CLEANUP_FREE char *src = NULL, *dest = NULL;
 
@@ -85,14 +104,23 @@ do_rsync (const char *src_orig, const char *dest_orig,
     archive = 0;
   if (!(optargs_bitmask & GUESTFS_RSYNC_DELETEDEST_BITMASK))
     deletedest = 0;
-
-  return rsync (src, src_orig, dest, dest_orig, archive, deletedest);
+  if (!(optargs_bitmask & GUESTFS_RSYNC_NOWHOLEFILE_BITMASK))
+    nowholefile = 0;
+  if (!(optargs_bitmask & GUESTFS_RSYNC_SPARSE_BITMASK))
+    sparse = 0;
+  if (!(optargs_bitmask & GUESTFS_RSYNC_HARDLINKS_BITMASK))
+    hardlinks = 0;
+  if (!(optargs_bitmask & GUESTFS_RSYNC_EXCLUDEFROM_BITMASK))
+    exclude_from = NULL;
+  return rsync (src, src_orig, dest, dest_orig, archive, deletedest,
+    nowholefile, sparse, hardlinks, exclude_from);
 }
 
 /* Takes optional arguments, consult optargs_bitmask. */
 int
 do_rsync_in (const char *remote, const char *dest_orig,
-             int archive, int deletedest)
+             int archive, int deletedest, int nowholefile,
+             int sparse, int hardlinks, const char *exclude_from)
 {
   CLEANUP_FREE char *dest = NULL;
 
@@ -106,14 +134,24 @@ do_rsync_in (const char *remote, const char *dest_orig,
     archive = 0;
   if (!(optargs_bitmask & GUESTFS_RSYNC_IN_DELETEDEST_BITMASK))
     deletedest = 0;
+  if (!(optargs_bitmask & GUESTFS_RSYNC_IN_NOWHOLEFILE_BITMASK))
+    nowholefile = 0;
+  if (!(optargs_bitmask & GUESTFS_RSYNC_IN_SPARSE_BITMASK))
+    sparse = 0;
+  if (!(optargs_bitmask & GUESTFS_RSYNC_IN_HARDLINKS_BITMASK))
+    hardlinks = 0;
+  if (!(optargs_bitmask & GUESTFS_RSYNC_IN_EXCLUDEFROM_BITMASK))
+    exclude_from = NULL;
 
-  return rsync (remote, remote, dest, dest_orig, archive, deletedest);
+  return rsync (remote, remote, dest, dest_orig, archive, deletedest,
+    nowholefile, sparse, hardlinks, exclude_from);
 }
 
 /* Takes optional arguments, consult optargs_bitmask. */
 int
 do_rsync_out (const char *src_orig, const char *remote,
-              int archive, int deletedest)
+              int archive, int deletedest, int nowholefile,
+              int sparse, int hardlinks, const char *exclude_from)
 {
   CLEANUP_FREE char *src = NULL;
 
@@ -127,6 +165,15 @@ do_rsync_out (const char *src_orig, const char *remote,
     archive = 0;
   if (!(optargs_bitmask & GUESTFS_RSYNC_OUT_DELETEDEST_BITMASK))
     deletedest = 0;
+  if (!(optargs_bitmask & GUESTFS_RSYNC_OUT_NOWHOLEFILE_BITMASK))
+    nowholefile = 0;
+  if (!(optargs_bitmask & GUESTFS_RSYNC_OUT_SPARSE_BITMASK))
+    sparse = 0;
+  if (!(optargs_bitmask & GUESTFS_RSYNC_OUT_HARDLINKS_BITMASK))
+    hardlinks = 0;
+  if (!(optargs_bitmask & GUESTFS_RSYNC_OUT_EXCLUDEFROM_BITMASK))
+    exclude_from = NULL;
 
-  return rsync (src, src_orig, remote, remote, archive, deletedest);
+  return rsync (src, src_orig, remote, remote, archive, deletedest,
+    nowholefile, sparse, hardlinks, exclude_from);
 }

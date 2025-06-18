@@ -270,7 +270,7 @@ this function fails and the C<errno> is set to C<EINVAL>." };
 
   { defaults with
     name = "add_drive"; added = (0, 0, 3);
-    style = RErr, [String (PlainString, "filename")], [OBool "readonly"; OString "format"; OString "iface"; OString "name"; OString "label"; OString "protocol"; OStringList "server"; OString "username"; OString "secret"; OString "cachemode"; OString "discard"; OBool "copyonread"; OInt "blocksize"];
+    style = RErr, [String (PlainString, "filename")], [OBool "readonly"; OString "format"; OString "iface"; OString "name"; OString "label"; OString "protocol"; OStringList "server"; OString "username"; OString "secret"; OString "cachemode"; OString "discard"; OBool "copyonread"; OInt "blocksize"; OString "secobject"];
     once_had_no_optargs = true;
     blocking = false;
     fish_alias = ["add"];
@@ -531,6 +531,13 @@ size (L<https://en.wikipedia.org/wiki/Advanced_Format>).
 
 Only a subset of the backends support this parameter (currently only the
 libvirt and direct backends do).
+
+=item C<secobject>
+
+The object that describes the encryption key if the drive is encrypted.
+e.g. secobject:secret,id=sec0,data=backing where id is the name of the
+encryption object, data is the encryption key in plain text.
+
 
 =back" };
 
@@ -1399,7 +1406,7 @@ the libguestfs protocol." };
 
   { defaults with
     name = "disk_create"; added = (1, 25, 31);
-    style = RErr, [String (PlainString, "filename"); String (PlainString, "format"); Int64 "size"], [OString "backingfile"; OString "backingformat"; OString "preallocation"; OString "compat"; OInt "clustersize"];
+    style = RErr, [String (PlainString, "filename"); String (PlainString, "format"); Int64 "size"], [OString "backingfile"; OString "backingformat"; OString "preallocation"; OString "compat"; OInt "clustersize"; OString "secobject"];
     test_excuse = "tests in tests/create subdirectory";
     shortdesc = "create a blank disk image";
     longdesc = "\
@@ -7499,7 +7506,7 @@ string." };
 
   { defaults with
     name = "rsync"; added = (1, 19, 29);
-    style = RErr, [String (Pathname, "src"); String (Pathname, "dest")], [OBool "archive"; OBool "deletedest"];
+    style = RErr, [String (Pathname, "src"); String (Pathname, "dest")], [OBool "archive"; OBool "deletedest"; OBool "nowholefile"; OBool "sparse"; OBool "hardlinks"; OString "excludefrom"];
     optional = Some "rsync";
     test_excuse = "tests are in tests/rsync";
     shortdesc = "synchronize the contents of two directories";
@@ -7525,11 +7532,27 @@ I<--archive> flag to C<rsync>.
 
 Delete files at the destination that do not exist at the source.
 
+=item C<nowholefile>
+
+Copies the delta changes from source file to destination file
+
+=item C<sparse>
+
+Sparsely copies the files from source to destination
+
+=item C<excludefrom>
+
+Contains the list of files to be excluded during rsync
+
+=item C<hardlinks>
+
+Preserve hard links
+
 =back" };
 
   { defaults with
     name = "rsync_in"; added = (1, 19, 29);
-    style = RErr, [String (PlainString, "remote"); String (Pathname, "dest")], [OBool "archive"; OBool "deletedest"];
+    style = RErr, [String (PlainString, "remote"); String (Pathname, "dest")], [OBool "archive"; OBool "deletedest"; OBool "nowholefile"; OBool "sparse"; OBool "hardlinks"; OString "excludefrom"];
     optional = Some "rsync";
     test_excuse = "tests are in tests/rsync";
     shortdesc = "synchronize host or remote filesystem with filesystem";
@@ -7554,7 +7577,7 @@ The optional arguments are the same as those of C<guestfs_rsync>." };
 
   { defaults with
     name = "rsync_out"; added = (1, 19, 29);
-    style = RErr, [String (Pathname, "src"); String (PlainString, "remote")], [OBool "archive"; OBool "deletedest"];
+    style = RErr, [String (Pathname, "src"); String (PlainString, "remote")], [OBool "archive"; OBool "deletedest"; OBool "nowholefile"; OBool "sparse"; OBool "hardlinks"; OString "excludefrom"];
     optional = Some "rsync";
     test_excuse = "tests are in tests/rsync";
     shortdesc = "synchronize filesystem with host or remote filesystem";

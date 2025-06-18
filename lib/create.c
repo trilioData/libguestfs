@@ -249,6 +249,44 @@ is_power_of_2 (unsigned v)
   guestfs_int_string_is_valid ((format), 1, 16, \
                                VALID_FLAG_ALPHA|VALID_FLAG_DIGIT, "")
 
+static char *
+convert_to_json_str(guestfs_h *g, const char *filename)
+{
+    char *p = strdup(filename);
+
+    char *rest = p;
+    char *token;
+
+    char json_str[1024];
+    char ekey_str[256];
+    char fname_str[512];
+
+     if (strstr(filename, "filename") == NULL ||
+         strstr(filename, "encrypt") == NULL) {
+         return NULL;
+     }
+     memset(json_str, 0, 512);
+     memset(fname_str, 0, 512);
+     memset(ekey_str, 0, 256);
+     while ((token = strtok_r(rest, ",", &rest))) {
+         printf("%s\n", token);
+
+         if (strstr(token, "filename")) {
+             char *fname = token;
+             strtok_r(fname, "=", &fname);
+             sprintf(fname_str, "\"driver\":\"qcow2\",\"file\":{\"driver\":\"file\",\"filename\":\"%s\"}", fname);
+         } else if (strstr(token, "encrypt")) {
+             char *ekey = token;
+
+             strtok_r(ekey, "=", &ekey);
+             sprintf(ekey_str, "\"encrypt.key-secret\": \"%s\"", ekey);
+         }
+    }
+    sprintf(json_str, "json:{%s,%s}", fname_str, ekey_str);
+    free(p);
+    return strdup(json_str);
+}
+
 static int
 disk_create_qcow2 (guestfs_h *g, const char *filename, int64_t size,
                    const char *backingfile,
@@ -258,7 +296,9 @@ disk_create_qcow2 (guestfs_h *g, const char *filename, int64_t size,
   CLEANUP_FREE char *backingformat_free = NULL;
   const char *preallocation = NULL;
   const char *compat = NULL;
+  char *json_str = NULL;
   int clustersize = -1;
+
   CLEANUP_FREE_STRINGSBUF DECLARE_STRINGSBUF (optionsv);
   CLEANUP_CMD_CLOSE struct command *cmd = guestfs_int_new_command (g);
   int r;
@@ -317,27 +357,37 @@ disk_create_qcow2 (guestfs_h *g, const char *filename, int64_t size,
   guestfs_int_cmd_add_arg (cmd, "-f");
   guestfs_int_cmd_add_arg (cmd, "qcow2");
 
-  /* -o parameter. */
-  if (backingfile) {
-    CLEANUP_FREE char *p = guestfs_int_qemu_escape_param (g, backingfile);
-    guestfs_int_add_sprintf (g, &optionsv, "backing_file=%s", p);
-  }
-  if (backingformat)
-    guestfs_int_add_sprintf (g, &optionsv, "backing_fmt=%s", backingformat);
-  if (preallocation)
-    guestfs_int_add_sprintf (g, &optionsv, "preallocation=%s", preallocation);
-  if (compat)
-    guestfs_int_add_sprintf (g, &optionsv, "compat=%s", compat);
-  if (clustersize >= 0)
-    guestfs_int_add_sprintf (g, &optionsv, "cluster_size=%d", clustersize);
-  guestfs_int_end_stringsbuf (g, &optionsv);
+  if (optargs->bitmask & GUESTFS_DISK_CREATE_SECOBJECT_BITMASK) {
+     CLEANUP_FREE char *p = guestfs_int_qemu_escape_param (g, backingfile);
+     json_str = convert_to_json_str(g, p);
+     guestfs_int_cmd_add_arg (cmd, "-b");
+     guestfs_int_cmd_add_arg (cmd, json_str);
+     guestfs_int_cmd_add_arg (cmd, "--object");
+     guestfs_int_cmd_add_arg (cmd, optargs->secobject);
+     free(json_str);
+  } else {
+     /* -o parameter. */
+     if (backingfile) {
+       CLEANUP_FREE char *p = guestfs_int_qemu_escape_param (g, backingfile);
 
-  if (optionsv.size > 1) {
-    CLEANUP_FREE char *options = guestfs_int_join_strings (",", optionsv.argv);
-    guestfs_int_cmd_add_arg (cmd, "-o");
-    guestfs_int_cmd_add_arg (cmd, options);
-  }
+       guestfs_int_add_sprintf (g, &optionsv, "backing_file=%s", p);
+     }
+     if (backingformat)
+       guestfs_int_add_sprintf (g, &optionsv, "backing_fmt=%s", backingformat);
+     if (preallocation)
+       guestfs_int_add_sprintf (g, &optionsv, "preallocation=%s", preallocation);
+     if (compat)
+       guestfs_int_add_sprintf (g, &optionsv, "compat=%s", compat);
+     if (clustersize >= 0)
+       guestfs_int_add_sprintf (g, &optionsv, "cluster_size=%d", clustersize);
+     guestfs_int_end_stringsbuf (g, &optionsv);
 
+     if (optionsv.size > 1) {
+       CLEANUP_FREE char *options = guestfs_int_join_strings (",", optionsv.argv);
+       guestfs_int_cmd_add_arg (cmd, "-o");
+       guestfs_int_cmd_add_arg (cmd, options);
+     }
+  }
   /* Complete the command line. */
   /* If the filename is something like "file:foo" then qemu-img will
    * try to interpret that as "foo" in the file:/// protocol.  To

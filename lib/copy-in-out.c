@@ -82,6 +82,8 @@ guestfs_impl_copy_in (guestfs_h *g,
   snprintf (fdbuf, sizeof fdbuf, "/dev/fd/%d", fd);
 
   r = guestfs_tar_in (g, fdbuf, remotedir);
+  if (r == -1)
+    return -1;
 
   if (close (fd) == -1) {
     perrorf (g, "close (tar subprocess)");
@@ -211,6 +213,8 @@ guestfs_impl_copy_out (guestfs_h *g,
     snprintf (fdbuf, sizeof fdbuf, "/dev/fd/%d", fd);
 
     r = guestfs_tar_out (g, remotepath, fdbuf);
+    if (r == -1)
+      return -1;
 
     if (close (fd) == -1) {
       perrorf (g, "close (tar-output subprocess)");

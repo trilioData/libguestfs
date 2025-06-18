@@ -59,6 +59,7 @@ struct drive_create_data {
   enum discard discard;
   bool copyonread;
   int blocksize;
+  char *secobject;
 };
 
 COMPILE_REGEXP (re_hostname_port, "(.*):(\\d+)$", 0)
@@ -115,6 +116,7 @@ create_drive_file (guestfs_h *g,
   drv->discard = data->discard;
   drv->copyonread = data->copyonread;
   drv->blocksize = data->blocksize;
+  drv->secobject = data->secobject ? safe_strdup (g, data->secobject) : NULL;
 
   if (data->readonly) {
     if (create_overlay (g, drv) == -1) {
@@ -634,6 +636,37 @@ valid_blocksize (int blocksize)
   return 0;
 }
 
+/**
+ * The object value must be in the format secret,id=sec0,data=backing
+ */
+static int
+valid_secobject (guestfs_h *g, char *secobject)
+{
+  /* Returns first token */
+  char *id;
+  char *data;
+  char *key;
+  char *seccopy = safe_strdup(g, secobject);
+  char *token = strtok(seccopy, ",");
+
+  if (strncmp(token, "secret", strlen("secret")) != 0) {
+    return 0;
+  }
+
+  id = strtok(NULL, ",");
+  data = strtok(NULL, ",");
+
+  key = strtok(id, "=");
+  if (strncmp(key, "id", strlen("id")) != 0) {
+    return 0;
+  }
+  key = strtok(data, "=");
+  if (strncmp(key, "data", strlen("data")) != 0) {
+    return 0;
+  }
+  return 1;
+}
+
 static int
 parse_one_server (guestfs_h *g, const char *server, struct drive_server *ret)
 {
@@ -759,6 +792,8 @@ guestfs_impl_add_drive_opts (guestfs_h *g, const char *filename,
     ? optargs->secret : NULL;
   data.cachemode = optargs->bitmask & GUESTFS_ADD_DRIVE_OPTS_CACHEMODE_BITMASK
     ? optargs->cachemode : NULL;
+  data.secobject = optargs->bitmask & GUESTFS_ADD_DRIVE_OPTS_SECOBJECT_BITMASK
+    ? (char *) optargs->secobject : NULL;
 
   if (optargs->bitmask & GUESTFS_ADD_DRIVE_OPTS_DISCARD_BITMASK) {
     if (STREQ (optargs->discard, "disable"))
@@ -813,6 +848,12 @@ guestfs_impl_add_drive_opts (guestfs_h *g, const char *filename,
     return -1;
   }
 
+  if (data.secobject && !valid_secobject (g, data.secobject)) {
+    error (g, _("%s parameter is invalid"), "object");
+    free_drive_servers (data.servers, data.nr_servers);
+    return -1;
+  }
+
   if (STREQ (protocol, "file")) {
     if (data.servers != NULL) {
       error (g, _("you cannot specify a server with file-backed disks"));
@@ -834,11 +875,24 @@ guestfs_impl_add_drive_opts (guestfs_h *g, const char *filename,
       /* We have to check for the existence of the file since that's
        * required by the API.
        */
-      if (access (filename, R_OK) == -1) {
-        perrorf (g, "%s", filename);
-        return -1;
-      }
+      char *fptr;
+      char *tmp;
+      char *filesubstr;
 
+      if ((fptr = strstr(filename, "file.filename=")) == NULL) {
+        if (access (filename, R_OK) == -1) {
+          perrorf (g, "%s", filename);
+          return -1;
+        }
+      } else {
+        fptr += strlen("file.filename=");
+        filesubstr = safe_strdup (g, fptr);
+	tmp = strtok(filesubstr, ",");
+        if (access (tmp, R_OK) == -1) {
+          perrorf (g, "%s", filename);
+          return -1;
+        }
+      }
       drv = create_drive_file (g, &data);
     }
   }

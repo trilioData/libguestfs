@@ -22,6 +22,8 @@
 *.swp
 *.trs
 
+.idea
+
 bindtests.tmp
 cscope.out
 .deps

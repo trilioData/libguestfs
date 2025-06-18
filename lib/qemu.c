@@ -811,13 +811,16 @@ guestfs_int_drive_source_qemu_param (guestfs_h *g,
      * As a side-effect this deals with paths that contain ':' since
      * qemu will not process the ':' if the path begins with '/'.
      */
-    path = realpath (src->u.path, NULL);
-    if (path == NULL) {
-      perrorf (g, _("realpath: could not convert ‘%s’ to absolute path"),
-               src->u.path);
-      return NULL;
-    }
-    return path;
+    if (strstr (src->u.path, "secret") == NULL) {
+      path = realpath (src->u.path, NULL);
+      if (path == NULL) {
+        perrorf (g, _("realpath: could not convert ‘%s’ to absolute path"),
+                 src->u.path);
+        return NULL;
+      }
+      return path;
+    } else
+      return safe_strdup (g, src->u.path);
 
   case drive_protocol_ftp:
     return make_uri (g, "ftp", src->username, src->secret,

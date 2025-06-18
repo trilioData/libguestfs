@@ -83,6 +83,11 @@ create_cow_overlay_direct (guestfs_h *g, void *datav, struct drive *drv)
     optargs.backingformat = drv->src.format;
   }
 
+  if (drv->secobject) {
+    optargs.bitmask |= GUESTFS_DISK_CREATE_SECOBJECT_BITMASK;
+    optargs.secobject = drv->secobject;
+  }
+
   if (guestfs_disk_create_argv (g, overlay, "qcow2", -1, &optargs) == -1) {
     free (overlay);
     return NULL;
@@ -202,10 +207,21 @@ add_drive_standard_params (guestfs_h *g, struct backend_direct_data *data,
 {
   if (!drv->overlay) {
     CLEANUP_FREE char *file = NULL;
+    CLEANUP_FREE char *token = NULL;
 
     /* file= parameter. */
     file = guestfs_int_drive_source_qemu_param (g, &drv->src);
-    append_list_format ("file=%s", file);
+    if (drv->secobject && strncmp(drv->secobject, "secret", strlen("secret")) == 0) {
+      /* get the first token */
+      token = strtok(file, ",");
+      /* walk through other tokens */
+      while ( token != NULL ) {
+        append_list(token);
+        token = strtok(NULL, ",");
+      }
+    } else {
+      append_list_format ("file=%s", file);
+    }
 
     if (drv->readonly)
       append_list ("snapshot=on");
@@ -296,6 +312,19 @@ static int
 add_drive (guestfs_h *g, struct backend_direct_data *data,
            struct qemuopts *qopts, size_t i, struct drive *drv)
 {
+  CLEANUP_FREE char *token = NULL;
+
+  if (drv->secobject && strncmp(drv->secobject, "secret", strlen("secret")) == 0) {
+      /* get the first token */
+      start_list ("--object") {
+      token = strtok(safe_strdup(g, drv->secobject), ",");
+         /* walk through other tokens */
+         while ( token != NULL ) {
+           append_list(token);
+           token = strtok(NULL, ",");
+         }
+      } end_list ();
+  }
   start_list ("-drive") {
     if (add_drive_standard_params (g, data, qopts, i, drv) == -1)
       return -1;
