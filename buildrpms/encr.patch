@@ -1,0 +1,288 @@
+diff -ruN orig/libguestfs-1.57.7/generator/actions_core.ml libguestfs-1.57.7/generator/actions_core.ml
+--- orig/libguestfs-1.57.7/generator/actions_core.ml	2025-12-04 15:57:07.613220708 +0530
++++ libguestfs-1.57.7/generator/actions_core.ml	2026-01-29 16:29:53.319626127 +0530
+@@ -264,7 +264,7 @@
+ 
+   { defaults with
+     name = "add_drive"; added = (0, 0, 3);
+-    style = RErr, [String (PlainString, "filename")], [OBool "readonly"; OString "format"; OString "iface"; OString "name"; OString "label"; OString "protocol"; OStringList "server"; OString "username"; OString "secret"; OString "cachemode"; OString "discard"; OBool "copyonread"; OInt "blocksize"];
++    style = RErr, [String (PlainString, "filename")], [OBool "readonly"; OString "format"; OString "iface"; OString "name"; OString "label"; OString "protocol"; OStringList "server"; OString "username"; OString "secret"; OString "cachemode"; OString "discard"; OBool "copyonread"; OInt "blocksize"; OString "secobject"];
+     once_had_no_optargs = true;
+     blocking = false;
+     fish_alias = ["add"];
+@@ -1347,7 +1347,7 @@
+ 
+   { defaults with
+     name = "disk_create"; added = (1, 25, 31);
+-    style = RErr, [String (PlainString, "filename"); String (PlainString, "format"); Int64 "size"], [OString "backingfile"; OString "backingformat"; OString "preallocation"; OString "compat"; OInt "clustersize"];
++    style = RErr, [String (PlainString, "filename"); String (PlainString, "format"); Int64 "size"], [OString "backingfile"; OString "backingformat"; OString "preallocation"; OString "compat"; OInt "clustersize"; OString "secobject"];
+     test_excuse = "tests in tests/create subdirectory";
+     shortdesc = "create a blank disk image";
+     longdesc = {|Create a blank disk image called F<filename> (a host file)
+diff -ruN orig/libguestfs-1.57.7/include/guestfs.h libguestfs-1.57.7/include/guestfs.h
+--- orig/libguestfs-1.57.7/include/guestfs.h	2025-12-04 16:38:48.438850264 +0530
++++ libguestfs-1.57.7/include/guestfs.h	2026-01-29 16:29:20.319333845 +0530
+@@ -1001,6 +1001,7 @@
+ #define GUESTFS_ADD_DRIVE_OPTS_DISCARD 10
+ #define GUESTFS_ADD_DRIVE_OPTS_COPYONREAD 11
+ #define GUESTFS_ADD_DRIVE_OPTS_BLOCKSIZE 12
++#define GUESTFS_ADD_DRIVE_OPTS_SECOBJECT 13
+ extern GUESTFS_DLL_PUBLIC int guestfs_add_drive_opts (guestfs_h *g, const char *filename, ...);
+ extern GUESTFS_DLL_PUBLIC int guestfs_add_drive_opts_va (guestfs_h *g, const char *filename, va_list args);
+ 
+@@ -1031,6 +1032,8 @@
+ # define GUESTFS_ADD_DRIVE_OPTS_COPYONREAD_BITMASK (UINT64_C(1)<<11)
+   int copyonread;
+ # define GUESTFS_ADD_DRIVE_OPTS_BLOCKSIZE_BITMASK (UINT64_C(1)<<12)
++# define GUESTFS_ADD_DRIVE_OPTS_SECOBJECT_BITMASK (UINT64_C(1)<<13)
++  const char *secobject;
+   int blocksize;
+ };
+ 
+@@ -1715,6 +1718,7 @@
+ #define GUESTFS_DISK_CREATE_PREALLOCATION 2
+ #define GUESTFS_DISK_CREATE_COMPAT 3
+ #define GUESTFS_DISK_CREATE_CLUSTERSIZE 4
++#define GUESTFS_DISK_CREATE_SECOBJECT 5
+ extern GUESTFS_DLL_PUBLIC int guestfs_disk_create (guestfs_h *g, const char *filename, const char *format, int64_t size, ...);
+ extern GUESTFS_DLL_PUBLIC int guestfs_disk_create_va (guestfs_h *g, const char *filename, const char *format, int64_t size, va_list args);
+ 
+@@ -1729,6 +1733,8 @@
+ # define GUESTFS_DISK_CREATE_COMPAT_BITMASK (UINT64_C(1)<<3)
+   const char *compat;
+ # define GUESTFS_DISK_CREATE_CLUSTERSIZE_BITMASK (UINT64_C(1)<<4)
++# define GUESTFS_DISK_CREATE_SECOBJECT_BITMASK (UINT64_C(1)<<5)
++  const char *secobject;
+   int clustersize;
+ };
+ 
+diff -ruN orig/libguestfs-1.57.7/lib/drives.c libguestfs-1.57.7/lib/drives.c
+--- orig/libguestfs-1.57.7/lib/drives.c	2025-12-04 15:57:07.618220698 +0530
++++ libguestfs-1.57.7/lib/drives.c	2026-01-29 16:30:22.437858771 +0530
+@@ -59,6 +59,7 @@
+   enum discard discard;
+   bool copyonread;
+   int blocksize;
++  char *secobject;
+ };
+ 
+ COMPILE_REGEXP (re_hostname_port, "(.*):(\\d+)$", 0)
+@@ -114,6 +115,7 @@
+     .discard                   = data->discard,
+     .copyonread                = data->copyonread,
+     .blocksize                 = data->blocksize,
++    .secobject                 = data->secobject ? safe_strdup (g, data->secobject) : NULL,
+   };
+ 
+   if (data->readonly) {
+@@ -151,6 +153,7 @@
+   drv->discard = data->discard;
+   drv->copyonread = data->copyonread;
+   drv->blocksize = data->blocksize;
++  drv->secobject = data->secobject ? safe_strdup (g, data->secobject) : NULL;
+ 
+   if (data->readonly) {
+     if (create_overlay (g, drv) == -1) {
+@@ -399,6 +402,7 @@
+   free (drv->name);
+   free (drv->disk_label);
+   free (drv->cachemode);
++  free (drv->secobject);
+ 
+   free (drv);
+ }
+@@ -564,6 +568,40 @@
+   return 0;
+ }
+ 
++/**
++ * The secobject value must be in the format secret,id=sec0,data=backing
++ */
++static int
++valid_secobject (guestfs_h *g, char *secobject)
++{
++  char *id;
++  char *data;
++  char *key;
++  char *seccopy = safe_strdup(g, secobject);
++  char *token = strtok(seccopy, ",");
++
++  if (strncmp(token, "secret", strlen("secret")) != 0) {
++    free(seccopy);
++    return 0;
++  }
++
++  id = strtok(NULL, ",");
++  data = strtok(NULL, ",");
++
++  key = strtok(id, "=");
++  if (strncmp(key, "id", strlen("id")) != 0) {
++    free(seccopy);
++    return 0;
++  }
++  key = strtok(data, "=");
++  if (strncmp(key, "data", strlen("data")) != 0) {
++    free(seccopy);
++    return 0;
++  }
++  free(seccopy);
++  return 1;
++}
++
+ static int
+ parse_one_server (guestfs_h *g, const char *server, struct drive_server *ret)
+ {
+@@ -686,6 +724,8 @@
+     ? optargs->secret : NULL;
+   data.cachemode = optargs->bitmask & GUESTFS_ADD_DRIVE_OPTS_CACHEMODE_BITMASK
+     ? optargs->cachemode : NULL;
++  data.secobject = optargs->bitmask & GUESTFS_ADD_DRIVE_OPTS_SECOBJECT_BITMASK
++    ? (char *) optargs->secobject : NULL;
+ 
+   if (optargs->bitmask & GUESTFS_ADD_DRIVE_OPTS_DISCARD_BITMASK) {
+     if (STREQ (optargs->discard, "disable"))
+@@ -740,6 +780,12 @@
+     return -1;
+   }
+ 
++  if (data.secobject && !valid_secobject (g, data.secobject)) {
++    error (g, _("%s parameter is invalid"), "secobject");
++    free_drive_servers (data.servers, data.nr_servers);
++    return -1;
++  }
++
+   if (STREQ (protocol, "file")) {
+     if (data.servers != NULL) {
+       error (g, _("you cannot specify a server with file-backed disks"));
+@@ -758,12 +804,28 @@
+     if (STREQ (filename, "/dev/null"))
+       drv = create_drive_dev_null (g, &data);
+     else {
++      char *fptr;
++      char *tmp;
++      char *filesubstr;
++
+       /* We have to check for the existence of the file since that's
+        * required by the API.
+        */
+-      if (access (filename, R_OK) == -1) {
+-        perrorf (g, "%s", filename);
+-        return -1;
++      if ((fptr = strstr(filename, "file.filename=")) == NULL) {
++        if (access (filename, R_OK) == -1) {
++          perrorf (g, "%s", filename);
++          return -1;
++        }
++      } else {
++        fptr += strlen("file.filename=");
++        filesubstr = safe_strdup (g, fptr);
++        tmp = strtok(filesubstr, ",");
++        if (access (tmp, R_OK) == -1) {
++          free(filesubstr);
++          perrorf (g, "%s", filename);
++          return -1;
++        }
++        free(filesubstr);
+       }
+ 
+       drv = create_drive_file (g, &data);
+diff -ruN orig/libguestfs-1.57.7/lib/guestfs-internal.h libguestfs-1.57.7/lib/guestfs-internal.h
+--- orig/libguestfs-1.57.7/lib/guestfs-internal.h	2025-12-04 15:57:07.619220696 +0530
++++ libguestfs-1.57.7/lib/guestfs-internal.h	2026-01-29 16:30:22.438858814 +0530
+@@ -297,6 +297,7 @@
+   enum discard discard;
+   bool copyonread;
+   int blocksize;
++  char *secobject;
+ };
+ 
+ /* Extra hv parameters (from guestfs_config). */
+diff -ruN orig/libguestfs-1.57.7/lib/launch-direct.c libguestfs-1.57.7/lib/launch-direct.c
+--- orig/libguestfs-1.57.7/lib/launch-direct.c	2025-12-04 15:57:07.619220696 +0530
++++ libguestfs-1.57.7/lib/launch-direct.c	2026-01-29 16:30:22.437858771 +0530
+@@ -88,6 +88,11 @@
+     optargs.backingformat = drv->src.format;
+   }
+ 
++  if (drv->secobject) {
++    optargs.bitmask |= GUESTFS_DISK_CREATE_SECOBJECT_BITMASK;
++    optargs.secobject = drv->secobject;
++  }
++
+   if (guestfs_disk_create_argv (g, overlay, "qcow2", -1, &optargs) == -1) {
+     free (overlay);
+     return NULL;
+@@ -207,10 +212,23 @@
+ {
+   if (!drv->overlay) {
+     CLEANUP_FREE char *file = NULL;
++    char *token = NULL;
++    char *file_copy = NULL;
+ 
+     /* file= parameter. */
+     file = guestfs_int_drive_source_qemu_param (g, &drv->src);
+-    append_list_format ("file=%s", file);
++    if (drv->secobject && strncmp(drv->secobject, "secret", strlen("secret")) == 0) {
++      /* For encrypted drives, add parameters without file= prefix */
++      file_copy = safe_strdup(g, file);
++      token = strtok(file_copy, ",");
++      while (token != NULL) {
++        append_list(token);
++        token = strtok(NULL, ",");
++      }
++      free(file_copy);
++    } else {
++      append_list_format ("file=%s", file);
++    }
+ 
+     if (drv->readonly)
+       append_list ("snapshot=on");
+@@ -295,6 +313,20 @@
+ add_drive (guestfs_h *g, struct backend_direct_data *data,
+            struct qemuopts *qopts, size_t i, struct drive *drv)
+ {
++  char *token = NULL;
++  char *sec_copy = NULL;
++
++  /* Add --object secret for encrypted drives */
++  if (drv->secobject && strncmp(drv->secobject, "secret", strlen("secret")) == 0) {
++    start_list ("--object") {
++      sec_copy = safe_strdup(g, drv->secobject);
++      token = strtok(sec_copy, ",");
++      while (token != NULL) {
++        append_list(token);
++        token = strtok(NULL, ",");
++      }
++    } end_list ();
++  }
+   start_list ("-drive") {
+     if (add_drive_standard_params (g, data, qopts, i, drv) == -1)
+       return -1;
+diff -ruN orig/libguestfs-1.57.7/lib/qemu.c libguestfs-1.57.7/lib/qemu.c
+--- orig/libguestfs-1.57.7/lib/qemu.c	2025-12-04 15:57:07.620220694 +0530
++++ libguestfs-1.57.7/lib/qemu.c	2026-01-29 16:26:15.410981859 +0530
+@@ -277,13 +277,17 @@
+      * As a side-effect this deals with paths that contain ':' since
+      * qemu will not process the ':' if the path begins with '/'.
+      */
+-    path = realpath (src->u.path, NULL);
+-    if (path == NULL) {
+-      perrorf (g, _("realpath: could not convert ‘%s’ to absolute path"),
+-               src->u.path);
+-      return NULL;
+-    }
+-    return path;
++    if (strstr (src->u.path, "secret") == NULL &&
++        strstr (src->u.path, "file.filename") == NULL) {
++      path = realpath (src->u.path, NULL);
++      if (path == NULL) {
++        perrorf (g, _("realpath: could not convert '%s' to absolute path"),
++                 src->u.path);
++        return NULL;
++      }
++      return path;
++    } else
++      return safe_strdup (g, src->u.path);
+ 
+   case drive_protocol_ftp:
+     return make_uri (g, "ftp", src->username, src->secret,
